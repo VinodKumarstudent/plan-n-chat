@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageCircle, X, Send } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import aiAvatar from "@/assets/ai-assistant-avatar.png";
 
 interface Message {
@@ -20,28 +21,55 @@ const AIChatWidget = () => {
     },
   ]);
   const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return;
 
-    const newMessage: Message = {
+    const userMessage: Message = {
       role: "user",
       content: input,
     };
 
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setIsTyping(true);
 
-    // Simulate AI response (replace with actual AI integration)
-    setTimeout(() => {
+    try {
+      // Get conversation history (last 10 messages to keep context manageable)
+      const conversationHistory = messages.slice(-10).map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      const { data, error } = await supabase.functions.invoke('chat-assistant', {
+        body: {
+          message: userMessage.content,
+          conversationHistory
+        }
+      });
+
+      if (error) throw error;
+
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "I'd be happy to help with that! Let me gather some information for you...",
+          content: data.reply || "I'm sorry, I couldn't process that request.",
         },
       ]);
-    }, 1000);
+    } catch (error) {
+      console.error('Chat error:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "I apologize, but I'm having trouble connecting right now. Please try again.",
+        },
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   return (
@@ -99,6 +127,17 @@ const AIChatWidget = () => {
                     </div>
                   </div>
                 ))}
+                {isTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-muted text-foreground rounded-lg p-3">
+                      <div className="flex gap-1">
+                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </ScrollArea>
 
@@ -110,8 +149,9 @@ const AIChatWidget = () => {
                   onKeyPress={(e) => e.key === "Enter" && handleSend()}
                   placeholder="Ask me anything..."
                   className="flex-1"
+                  disabled={isTyping}
                 />
-                <Button onClick={handleSend} size="icon">
+                <Button onClick={handleSend} size="icon" disabled={isTyping || !input.trim()}>
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
